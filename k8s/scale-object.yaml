@@ -1,25 +1,40 @@
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: datadog-scaledobject
-  namespace: keda-datadog-demo
+  name: demo-keda-scaledobject
+  namespace: demo-app
 spec:
   scaleTargetRef:
-    name: crud-api
-  minReplicaCount: 1
-  maxReplicaCount: 5
+    apiVersion:    apps/v1
+    kind:          Deployment
+    name:          demo-keda
+  pollingInterval: 10     # Optional. Default: 30 seconds
+  cooldownPeriod: 100     # Optional. Default: 300 seconds
+  minReplicaCount: 1      # Optional. Default: 0
+  maxReplicaCount: 10      # Optional. Default: 100
+  fallback:               # Optional. Section to specify fallback options
+    failureThreshold: 3   # Mandatory if fallback section is included
+    replicas: 1
+  advanced: # Optional. Section to specify advanced options
+    horizontalPodAutoscalerConfig: # Optional. Section to specify HPA related options
+      behavior: # Optional. Use to modify HPA's scaling behavior
+        scaleDown:
+          stabilizationWindowSeconds: 60
+          policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 15
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+          - type: Percent
+            value: 100
+            periodSeconds: 15
   triggers:
-  - type: datadog
-    # Optional: (Value or AverageValue). Whether the target value is global or average per pod. Default: AverageValue
-    metricType: "Value"
-    metadata:
-      # Required: datadog metric query
-      query: "sum:trace.express.request.hits{env:staging,service:crud-operation-with-jsonfile }.as_count()"
-      # Required: according to the number of query result, to scale the TargetRef
-      queryValue: "50"
-      # Optional: The time window (in seconds) to retrieve metrics from Datadog. Default: 90
-      age: "90"
-      # Optional: The metric value to return to the HPA if a metric value wasn't found for the specified time window
-      metricUnavailableValue: "0"
-    authenticationRef:
-      name: keda-trigger-auth-datadog-secret
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-server.monitoring.svc.cluster.local:80/
+        query: sum(rate(hello_world_requests{service="demo-keda-svc"}[1m])) # Note: query must return a vector/scalar single element response
+        threshold: '50'
+        # Optional fields:
+        ignoreNullValues: "true" # Default is `true`, which means ignoring the empty value list from Prometheus. Set to `false` the scaler will return error when Prometheus target is lost
